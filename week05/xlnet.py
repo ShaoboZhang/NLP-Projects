@@ -23,6 +23,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class XLNet(nn.Module):
     """
         Defines a Transformer-XL computation graph with additional
@@ -65,6 +66,7 @@ class XLNet(nn.Module):
         clamp_len: int, clamp all relative distances larger than clamp_len.
           -1 means no clamping.
       """
+
     def __init__(self, n_token, n_layer, n_head, d_head, d_inner, d_model, dropout, dropatt,
                  attn_type, bi_data, clamp_len, same_length, reuse_len, mem_len):
         super(XLNet, self).__init__()
@@ -88,33 +90,24 @@ class XLNet(nn.Module):
         self.Dropout = nn.Dropout(p=dropout)
         self.DropAttn = nn.Dropout(p=dropatt)
 
-        self.r_w_bias = nn.Parameter(torch.randn(self.n_layer,
-                                                  self.n_head,self.d_head))
-        self.r_r_bias = nn.Parameter(torch.randn(self.n_layer,
-                                                  self.n_head, self.d_head))
+        self.r_w_bias = nn.Parameter(torch.randn(self.n_layer, self.n_head, self.d_head))
+        self.r_r_bias = nn.Parameter(torch.randn(self.n_layer, self.n_head, self.d_head))
 
         ##### Segment embedding
-        self.r_s_bias = nn.Parameter(torch.randn(self.n_layer,
-                                                  self.n_head,self.d_head))
+        self.r_s_bias = nn.Parameter(torch.randn(self.n_layer, self.n_head, self.d_head))
 
-        self.seg_embed = nn.Parameter(torch.randn(self.n_layer, 2,
-                                                   self.n_head, self.d_head))
+        self.seg_embed = nn.Parameter(torch.randn(self.n_layer, 2, self.n_head, self.d_head))
 
         self.mask_emb = nn.Parameter(torch.randn(1, 1, d_model))
 
         # post-attention projection (back to `d_model`)
-        self.proj_o = nn.Parameter(torch.randn(self.d_model,
-                                                self.n_head, self.d_head))
+        self.proj_o = nn.Parameter(torch.randn(self.d_model, self.n_head, self.d_head))
 
         #### Project hidden states to a specific head with a 4D-shape.
-        self.q_proj_weight = nn.Parameter(torch.randn(self.d_model,
-                                                       self.n_head, self.d_head))
-        self.k_proj_weight = nn.Parameter(torch.randn(self.d_model,
-                                                       self.n_head, self.d_head))
-        self.v_proj_weight = nn.Parameter(torch.randn(self.d_model,
-                                                       self.n_head, self.d_head))
-        self.r_proj_weight = nn.Parameter(torch.randn(self.d_model,
-                                                       self.n_head, self.d_head))
+        self.q_proj_weight = nn.Parameter(torch.randn(self.d_model, self.n_head, self.d_head))
+        self.k_proj_weight = nn.Parameter(torch.randn(self.d_model, self.n_head, self.d_head))
+        self.v_proj_weight = nn.Parameter(torch.randn(self.d_model, self.n_head, self.d_head))
+        self.r_proj_weight = nn.Parameter(torch.randn(self.d_model, self.n_head, self.d_head))
 
         self.layer_norm = nn.LayerNorm(d_model)
 
@@ -124,8 +117,8 @@ class XLNet(nn.Module):
 
         self.softmax_b = nn.Parameter(torch.zeros(self.n_token))
 
-
-    def gelu(self, x):
+    @staticmethod
+    def gelu(x):
         """Gaussian Error Linear Unit.
         This is a smoother version of the RELU.
         Original paper: https://arxiv.org/abs/1606.08415
@@ -138,19 +131,19 @@ class XLNet(nn.Module):
             (np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3)))))
         return x * cdf
 
-    def rel_shift(self, x, klen=-1):
+    @staticmethod
+    def rel_shift(x, klen=-1):
         """perform relative shift to form the relative attention score."""
         x_size = x.shape
 
         x = torch.reshape(x, [x_size[1], x_size[0], x_size[2], x_size[3]])
-        x = x[1:, 0:, 0:, 0:] # tf.slice(x, [1, 0, 0, 0], [-1, -1, -1, -1])
+        x = x[1:, 0:, 0:, 0:]  # tf.slice(x, [1, 0, 0, 0], [-1, -1, -1, -1])
         x = torch.reshape(x, [x_size[0], x_size[1] - 1, x_size[2], x_size[3]])
-        x = x[0:, 0:klen, 0:, 0:] # tf.slice(x, [0, 0, 0, 0], [-1, klen, -1, -1])
+        x = x[0:, 0:klen, 0:, 0:]  # tf.slice(x, [0, 0, 0, 0], [-1, klen, -1, -1])
 
         return x
 
     def positionwise_ffn(self, inp, activation_type='relu'):
-
         """Position-wise Feed-forward Network."""
         output = self.conv1(inp)
         output = self.Dropout(output)
@@ -180,20 +173,17 @@ class XLNet(nn.Module):
 
     def head_projection(self, h, name):
         """Project hidden states to a specific head with a 4D-shape."""
-        proj_weight = None
         if name == 'q':
             proj_weight = self.q_proj_weight
         elif name == 'k':
             proj_weight = self.k_proj_weight
-        elif name =='v':
+        elif name == 'v':
             proj_weight = self.v_proj_weight
         elif name == 'r':
             proj_weight = self.r_proj_weight
         else:
             raise ValueError('Unknown `name` {}.'.format(name))
-
         head = torch.einsum('ibh,hnd->ibnd', h, proj_weight)
-
         return head
 
     def rel_attn_core(self, q_head, k_head_h, v_head_h, k_head_r, seg_embed, seg_mat,
@@ -230,8 +220,7 @@ class XLNet(nn.Module):
 
         return attn_vec
 
-    def rel_multihead_attn(self, h, r, r_w_bias, r_r_bias, seg_mat, r_s_bias, seg_embed,
-                           attn_mask, mems, d_model, n_head, d_head, dropout, dropatt):
+    def rel_multihead_attn(self, h, r, r_w_bias, r_r_bias, seg_mat, r_s_bias, seg_embed, attn_mask, mems, d_head):
         """Multi-head attention with relative positional encoding."""
 
         scale = 1 / (d_head ** 0.5)
@@ -312,34 +301,36 @@ class XLNet(nn.Module):
 
         return output_h, output_g
 
-
-    def _create_mask(self, qlen, mlen, dtype, same_length=False):
+    @staticmethod
+    def _create_mask(qlen, mlen, dtype, same_length=False):
         """create causal attention mask."""
         # [[0,1,1],
         #  [0,0,1],
         #  [0,0,0]]
         attn_mask = torch.ones([qlen, qlen], dtype=dtype)
-        mask_u = torch.triu(attn_mask) # Upper triangular part.
-        mask_dia = torch.tril(attn_mask) & torch.triu(attn_mask) # Diagonal. Figure 2(c)
+        mask_u = torch.triu(attn_mask)  # Upper triangular part.
+        mask_dia = torch.tril(attn_mask) & torch.triu(attn_mask)  # Diagonal. Figure 2(c)
         attn_mask_pad = torch.zeros([qlen, mlen], dtype=dtype)
-        ret = torch.cat([attn_mask_pad, mask_u - mask_dia], dim=1) # [qlen, mlen]
+        ret = torch.cat([attn_mask_pad, mask_u - mask_dia], dim=1)  # [qlen, mlen]
         if same_length:
             # [[0,1,1],
             #  [1,0,1],
             #  [1,1,0]]
-            mask_l = torch.tril(attn_mask) # Lower triangular part.
+            mask_l = torch.tril(attn_mask)  # Lower triangular part.
             ret = torch.cat([ret[:, :qlen] + mask_l - mask_dia, ret[:, qlen:]], dim=1)
 
-        return ret.type(dtype=torch.float32) # [qlen, qlen]
+        return ret.type(dtype=torch.float32)  # [qlen, qlen]
 
-    def positional_embedding(self, pos_seq, inv_freq):
+    @staticmethod
+    def positional_embedding(pos_seq, inv_freq):
         sinusoid_inp = torch.einsum('i,d->id', pos_seq, inv_freq)
         pos_emb = torch.cat([torch.sin(sinusoid_inp), torch.cos(sinusoid_inp)], dim=-1)
         pos_emb = pos_emb[:, None, :]
 
         return pos_emb
 
-    def _cache_mem(self, curr_out, prev_mem, mem_len, reuse_len=None):
+    @staticmethod
+    def _cache_mem(curr_out, prev_mem, mem_len, reuse_len=None):
         """cache hidden states into memory."""
 
         with torch.no_grad():
@@ -355,7 +346,6 @@ class XLNet(nn.Module):
                     new_mem = torch.cat([prev_mem, curr_out], dim=0)[-mem_len:]
 
             return new_mem
-
 
     def relative_positional_encoding(self, qlen, klen, d_model, clamp_len, attn_type,
                                      bi_data, bsz=None, dtype=None):
@@ -375,7 +365,7 @@ class XLNet(nn.Module):
         else:
             raise ValueError('Unknown `attn_type` {}.'.format(attn_type))
 
-        if bi_data and bsz%2 is 0:
+        if bi_data and bsz % 2 is 0:
             fwd_pos_seq = torch.arange(beg, end, -1.0)
             bwd_pos_seq = torch.arange(-beg, -end, 1.0)
 
@@ -432,7 +422,7 @@ class XLNet(nn.Module):
         if data_mask is not None:
             # all mems can be attended to
             mems_mask = torch.zeros([data_mask.shape[0], mlen, bsz],
-                                 dtype=torch.float32)
+                                    dtype=torch.float32)
             data_mask = torch.cat([mems_mask, data_mask], dim=1)
             if attn_mask is None:
                 attn_mask = data_mask[:, :, :, None]
@@ -443,10 +433,9 @@ class XLNet(nn.Module):
             attn_mask = attn_mask.gt(0).type(torch.float32)
 
         if attn_mask is not None:
-            non_tgt_mask = -torch.eye(qlen, dtype=torch.float32) # [qlen, qlen]
-            non_tgt_mask = torch.cat([torch.zeros([qlen, mlen], dtype=torch.float32), # [qlen, klen]
-                                        non_tgt_mask],
-                                        dim=-1)
+            non_tgt_mask = -torch.eye(qlen, dtype=torch.float32)  # [qlen, qlen]
+            non_tgt_mask = torch.cat([torch.zeros([qlen, mlen], dtype=torch.float32),  # [qlen, klen]
+                                      non_tgt_mask], dim=-1)
             non_tgt_mask = (attn_mask +
                             non_tgt_mask[:, :, None, None]).gt(0).type(dtype=torch.float32)
         else:
@@ -512,8 +501,8 @@ class XLNet(nn.Module):
                     h=output_h,
                     g=output_g,
                     r=pos_emb,
-                    r_w_bias= self.r_w_bias[i],
-                    r_r_bias= self.r_r_bias[i],
+                    r_w_bias=self.r_w_bias[i],
+                    r_r_bias=self.r_r_bias[i],
                     seg_mat=seg_mat,
                     r_s_bias=r_s_bias_i,
                     seg_embed=seg_embed_i,
